@@ -1485,6 +1485,468 @@ table.dt{width:100%;border-collapse:collapse;font-size:12px;}
 </div>
 
 </div><!-- /appWrapper -->
+/**
+ * MaintPro — CORREÇÕES DE BUGS
+ * ============================================================
+ * INSTRUÇÕES: Cole este bloco inteiro ANTES do </body> do HTML,
+ * substituindo os trechos marcados (os scripts do segundo bloco).
+ *
+ * BUGS CORRIGIDOS:
+ *  1. planLocalToRow() — não existia, criada aqui
+ *  2. renderAll() — não existia, criada aqui
+ *  3. toast() — alias correto para showToast()
+ *  4. salvarCompra() duplicada — versão única com Supabase
+ *  5. confirmarPlanMes() duplicada — versão única correta
+ *  6. dbInsert manutencao — mapeamento desc→descricao corrigido
+ *  7. dbInsert planejamento — mapeamento correto
+ * ============================================================
+ */
+
+// ─────────────────────────────────────────────────────────
+// FIX 1 — Helper que nunca existia: planLocalToRow
+// ─────────────────────────────────────────────────────────
+function planLocalToRow(item) {
+  return {
+    id:        item.id,
+    mes:       item.mes,
+    ano:       item.ano,
+    cat:       item.cat,
+    descricao: item.desc || item.descricao || '',
+    tipo:      item.tipo,
+    valor:     item.valor,
+    data:      item.data  || null,
+    obs:       item.obs   || '',
+    origem_compra_id: item.origemCompraId || null
+  };
+}
+
+// ─────────────────────────────────────────────────────────
+// FIX 2 — renderAll() que não existia
+// ─────────────────────────────────────────────────────────
+function renderAll() {
+  // Re-renderiza as abas que têm dados em memória
+  if (document.getElementById('page-manutencao')?.classList.contains('active')) renderManutencoes();
+  if (document.getElementById('page-compras')?.classList.contains('active'))    renderComprasPage();
+  if (document.getElementById('page-planning')?.classList.contains('active'))   renderPlanning();
+  if (rawData && rawData.length) {
+    if (document.getElementById('page-dashboard')?.classList.contains('active'))  renderDashboard();
+    if (document.getElementById('page-detalhe')?.classList.contains('active'))    renderDetalhe();
+    if (document.getElementById('page-budget')?.classList.contains('active'))     renderBudget();
+    if (document.getElementById('page-fornecedores')?.classList.contains('active')) renderFornecedores();
+  }
+}
+
+// ─────────────────────────────────────────────────────────
+// FIX 3 — toast() era chamada mas a função real é showToast()
+// ─────────────────────────────────────────────────────────
+function toast(msg, type = 'ok') {
+  showToast(msg, type);
+}
+
+// ─────────────────────────────────────────────────────────
+// FIX 4 — salvarManutencao corrigida (desc→descricao no DB)
+// ─────────────────────────────────────────────────────────
+function salvarManutencao() {
+  const editId = parseInt(document.getElementById('modalManutForm').dataset.editId) || null;
+  const item = {
+    id:          editId || Date.now(),
+    tipo:        document.getElementById('mfTipo').value,
+    categoria:   document.getElementById('mfTipo').value === 'Melhoria' ? 'melhoria' : 'obrig',
+    equip:       document.getElementById('mfEquip').value,
+    norma:       document.getElementById('mfNorma').value,
+    critica:     document.getElementById('mfCriticidade').value,
+    resp:        document.getElementById('mfResp').value,
+    forn:        document.getElementById('mfFornec').value,
+    orcado:      parseFloat(document.getElementById('mfOrcado').value)    || 0,
+    realizado:   parseFloat(document.getElementById('mfRealizado').value) || 0,
+    dataPlan:    document.getElementById('mfDataPlan').value,
+    dataReal:    document.getElementById('mfDataReal').value,
+    status:      document.getElementById('mfStatusForm').value,
+    avanco:      parseInt(document.getElementById('mfAvanco').value)      || 0,
+    metaFis:     parseInt(document.getElementById('mfMetaFis').value)     || 0,
+    realFis:     parseInt(document.getElementById('mfRealFis').value)     || 0,
+    subcat:      document.getElementById('mfSubcat').value,
+    prioridade:  document.getElementById('mfPriori').value,
+    desc:        document.getElementById('mfDescricao').value,
+    obs:         document.getElementById('mfObs').value,
+  };
+
+  // Mapeamento correto para o banco (campo descricao, não desc)
+  const dbRow = {
+    ...item,
+    descricao: item.desc,       // FIX: coluna correta no Supabase
+    data_plan: item.dataPlan,
+    data_real: item.dataReal,
+  };
+  // Remover campos que não existem na tabela
+  delete dbRow.desc;
+  delete dbRow.dataPlan;
+  delete dbRow.dataReal;
+
+  if (editId) {
+    const idx = manutencoes.findIndex(m => m.id === editId);
+    if (idx >= 0) manutencoes[idx] = item;
+    dbUpdate('manutencoes', editId, dbRow).catch(console.warn);
+  } else {
+    manutencoes.push(item);
+    dbInsert('manutencoes', dbRow)
+      .then(saved => { if (saved?.id) item.id = saved.id; })
+      .catch(console.warn);
+  }
+
+  fecharModal('modalManutForm');
+  renderManutencoes();
+  showToast('✓ Manutenção salva com sucesso!', 'ok');
+}
+
+// ─────────────────────────────────────────────────────────
+// FIX 5 — salvarCompra: versão única com Supabase (substitui
+//          ambas as versões conflitantes do HTML original)
+// ─────────────────────────────────────────────────────────
+function salvarCompra() {
+  const editId     = parseInt(document.getElementById('modalCompraForm').dataset.editId) || null;
+  const novoStatus = document.getElementById('cfStatusForm').value;
+
+  // Capturar status anterior (para trigger de planning)
+  let statusAnterior = null;
+  if (editId) {
+    const existing = compras.find(c => c.id === editId);
+    if (existing) statusAnterior = existing.status;
+  }
+
+  const item = {
+    id:        editId || Date.now(),
+    dataSol:   document.getElementById('cfDataSol').value,
+    solic:     document.getElementById('cfSolicit').value,
+    area:      document.getElementById('cfArea').value,
+    tipo:      document.getElementById('cfTipoForm').value,
+    forn:      document.getElementById('cfFornecedor').value,
+    desc:      document.getElementById('cfDescricao').value,
+    cat:       document.getElementById('cfCategoria').value,
+    subcat:    document.getElementById('cfSubcatForm').value,
+    numReq:    document.getElementById('cfNumReq').value,
+    numOS:     document.getElementById('cfNumOS').value,
+    numOrc:    document.getElementById('cfNumOrc').value,
+    valOrc:    parseFloat(document.getElementById('cfValOrc').value)    || 0,
+    valAprov:  parseFloat(document.getElementById('cfValAprov').value)  || 0,
+    valReal:   parseFloat(document.getElementById('cfValReal').value)   || 0,
+    status:    novoStatus,
+    prazo:     document.getElementById('cfPrazo').value,
+    dataFech:  document.getElementById('cfDataFech').value,
+    obs:       document.getElementById('cfObs').value,
+  };
+
+  // Mapeamento correto para o banco
+  const dbRow = {
+    ...item,
+    descricao:  item.desc,        // FIX: coluna correta no Supabase
+    data_sol:   item.dataSol,
+    data_fech:  item.dataFech,
+    val_orc:    item.valOrc,
+    val_aprov:  item.valAprov,
+    val_real:   item.valReal,
+    num_req:    item.numReq,
+    num_os:     item.numOS,
+    num_orc:    item.numOrc,
+  };
+  // Remover campos camelCase que não existem na tabela
+  ['desc','dataSol','dataFech','valOrc','valAprov','valReal','numReq','numOS','numOrc'].forEach(k => delete dbRow[k]);
+
+  if (editId) {
+    const idx = compras.findIndex(c => c.id === editId);
+    if (idx >= 0) compras[idx] = item;
+    dbUpdate('compras', editId, dbRow).catch(console.warn);
+  } else {
+    compras.push(item);
+    dbInsert('compras', dbRow)
+      .then(saved => { if (saved?.id) item.id = saved.id; })
+      .catch(console.warn);
+  }
+
+  fecharModal('modalCompraForm');
+  renderComprasPage();
+  showToast('✓ Compra salva com sucesso!', 'ok');
+
+  // Trigger integração com Planning se status mudou
+  if (novoStatus !== statusAnterior) {
+    onCompraStatusChanged(item.id, novoStatus);
+  }
+}
+
+// ─────────────────────────────────────────────────────────
+// FIX 6 — salvarItemPlanning com Supabase correto
+// ─────────────────────────────────────────────────────────
+function salvarItemPlanning() {
+  const desc  = (document.getElementById('pvDesc').value || '').trim();
+  if (!desc) { showToast('Informe a descrição do item.', 'err'); return; }
+  const valor = parseFloat(document.getElementById('pvItemValor').value) || 0;
+  if (valor <= 0) { showToast('Informe um valor válido.', 'err'); return; }
+
+  const item = {
+    id:    pvNextId++,
+    mes:   getPvMes(),
+    ano:   getPvAno(),
+    cat:   document.getElementById('pvItemCat').value,
+    desc,
+    tipo:  document.getElementById('pvItemTipo').value,
+    valor,
+    data:  document.getElementById('pvItemData').value  || '',
+    obs:   document.getElementById('pvItemObs').value   || ''
+  };
+
+  planningItems.push(item);
+
+  // Persistir no Supabase com mapeamento correto
+  dbInsert('planejamento', planLocalToRow(item))
+    .then(saved => { if (saved?.id) item.id = saved.id; })
+    .catch(console.warn);
+
+  // Limpar form
+  ['pvDesc', 'pvItemValor', 'pvItemData', 'pvItemObs'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.value = '';
+  });
+  document.getElementById('pvCatSugestao').style.display = 'none';
+
+  renderPlanning();
+  showToast(`✓ "${desc}" adicionado!`, 'ok');
+}
+
+// ─────────────────────────────────────────────────────────
+// FIX 7 — excluirItemPlanning com Supabase
+// ─────────────────────────────────────────────────────────
+function excluirItemPlanning(id) {
+  if (!confirm('Excluir este item?')) return;
+  planningItems = planningItems.filter(i => i.id !== id);
+  dbDelete('planejamento', id).catch(console.warn);
+  renderPlanning();
+  showToast('Item removido.', 'ok');
+}
+
+// ─────────────────────────────────────────────────────────
+// FIX 8 — confirmarPlanMes: versão única correta
+//          (substitui ambas as versões duplicadas do HTML)
+// ─────────────────────────────────────────────────────────
+function confirmarPlanMes() {
+  if (!_planPendingItem) { fecharModal('modalPlanMes'); return; }
+
+  const mes = parseInt(document.getElementById('planMesSelect').value);
+  const ano = parseInt(document.getElementById('planAnoSelect').value);
+  const mesNome = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho',
+                   'Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'][mes - 1];
+
+  if (_planPendingItem.tipo === 'planningItem') {
+    // Mover item existente para outro mês
+    const item = planningItems.find(i => i.id === _planPendingItem.id);
+    if (item) {
+      item.mes  = mes;
+      item.ano  = ano;
+      item.tipo = 'planned';
+      dbUpdate('planejamento', item.id, planLocalToRow(item)).catch(console.warn);
+      showToast(`📅 Planejado para ${mesNome}/${ano}`, 'ok');
+    }
+  } else {
+    // Vindo de uma Compra — adicionar ao planning
+    const jaExiste = planningItems.find(i =>
+      i.mes === mes && i.ano === ano &&
+      i.desc === _planPendingItem.desc && i.tipo === 'planned'
+    );
+
+    if (jaExiste) {
+      jaExiste.valor = _planPendingItem.valor;
+      jaExiste.cat   = _planPendingItem.cat;
+      dbUpdate('planejamento', jaExiste.id, planLocalToRow(jaExiste)).catch(console.warn);
+      showToast(`📋 Planning de ${mesNome}/${ano} atualizado`, 'ok');
+    } else {
+      const newItem = {
+        id:             pvNextId++,
+        mes,
+        ano,
+        cat:            _planPendingItem.cat,
+        desc:           _planPendingItem.desc,
+        tipo:           'planned',
+        valor:          _planPendingItem.valor,
+        data:           '',
+        obs:            `Origem: Compra #${_planPendingItem.id}`,
+        origemCompraId: _planPendingItem.tipo === 'compra' ? _planPendingItem.id : undefined
+      };
+      planningItems.push(newItem);
+      dbInsert('planejamento', planLocalToRow(newItem))
+        .then(saved => { if (saved?.id) newItem.id = saved.id; })
+        .catch(console.warn);
+      showToast(`✓ Adicionado ao Planning de ${mesNome}/${ano}`, 'ok');
+    }
+  }
+
+  fecharModal('modalPlanMes');
+  _planPendingItem = null;
+
+  if (document.getElementById('page-planning')?.classList.contains('active')) {
+    renderPlanning();
+  }
+}
+
+// ─────────────────────────────────────────────────────────
+// FIX 9 — sincronizarCompraNoPlanning com Supabase correto
+// ─────────────────────────────────────────────────────────
+function sincronizarCompraNoPlanning(compraId, tipoEntry) {
+  const compra = compras.find(c => c.id === compraId);
+  if (!compra) return;
+
+  const mes   = new Date().getMonth() + 1;
+  const ano   = new Date().getFullYear();
+  const valor = tipoEntry === 'real'
+    ? (compra.valReal   || compra.valAprov || compra.valOrc || 0)
+    : (compra.valAprov  || compra.valOrc   || 0);
+
+  // Remover entrada anterior desta compra do mesmo tipo
+  const toDelete = planningItems.filter(i => i.origemCompraId === compraId && i.tipo === tipoEntry);
+  toDelete.forEach(i => dbDelete('planejamento', i.id).catch(console.warn));
+  planningItems = planningItems.filter(i => !(i.origemCompraId === compraId && i.tipo === tipoEntry));
+
+  const syncItem = {
+    id:             pvNextId++,
+    mes,
+    ano,
+    cat:            compra.subcat || 'Equipment Expenses',
+    desc:           compra.desc   || compra.forn,
+    tipo:           tipoEntry,
+    valor,
+    data:           compra.dataFech || new Date().toISOString().split('T')[0],
+    obs:            `Sincronizado de Compras #${compraId}`,
+    origemCompraId: compraId
+  };
+
+  planningItems.push(syncItem);
+  dbInsert('planejamento', planLocalToRow(syncItem))
+    .then(saved => { if (saved?.id) syncItem.id = saved.id; })
+    .catch(console.warn);
+}
+
+// ─────────────────────────────────────────────────────────
+// FIX 10 — onPlanningTipoChange corrigida (usava toast())
+// ─────────────────────────────────────────────────────────
+function onPlanningTipoChange(itemId, novoTipo) {
+  const item = planningItems.find(i => i.id === itemId);
+  if (!item) return;
+
+  if (novoTipo === 'real') {
+    item.tipo = 'real';
+    item.data = item.data || new Date().toISOString().split('T')[0];
+    dbUpdate('planejamento', item.id, planLocalToRow(item)).catch(console.warn);
+    showToast(`✓ "${item.desc}" marcado como Realizado`, 'ok');
+    renderPlanning();
+  } else if (novoTipo === 'planned') {
+    _planPendingItem = {
+      tipo:         'planningItem',
+      id:           itemId,
+      desc:         item.desc,
+      cat:          item.cat,
+      valor:        item.valor,
+      targetStatus: 'planned'
+    };
+    document.getElementById('planMesItemDesc').textContent = `"${item.desc}" → Planejado`;
+    document.getElementById('planMesSelect').value = getPvMes() || new Date().getMonth() + 1;
+    document.getElementById('planAnoSelect').value = getPvAno() || new Date().getFullYear();
+    document.getElementById('modalPlanMes').classList.remove('hidden');
+  }
+}
+
+// ─────────────────────────────────────────────────────────
+// FIX 11 — onCompraStatusChanged corrigida (usava toast())
+// ─────────────────────────────────────────────────────────
+function onCompraStatusChanged(compraId, novoStatus) {
+  const compra = compras.find(c => c.id === compraId);
+  if (!compra) return;
+
+  if (novoStatus === 'Planejado' || novoStatus === 'Aprovado') {
+    _planPendingItem = {
+      tipo:         'compra',
+      id:           compraId,
+      desc:         compra.desc || compra.forn,
+      cat:          compra.subcat || 'Equipment Expenses',
+      valor:        compra.valAprov || compra.valOrc || 0,
+      targetStatus: novoStatus
+    };
+    document.getElementById('planMesItemDesc').textContent =
+      `"${_planPendingItem.desc}" → Planejado`;
+    const now = new Date();
+    document.getElementById('planMesSelect').value = now.getMonth() + 1;
+    document.getElementById('planAnoSelect').value = now.getFullYear();
+    document.getElementById('modalPlanMes').classList.remove('hidden');
+
+  } else if (novoStatus === 'Finalizado') {
+    sincronizarCompraNoPlanning(compraId, 'real');
+    showToast('✓ Compra finalizada registrada no Planning vs Real como Real!', 'ok');
+  }
+}
+
+// ─────────────────────────────────────────────────────────
+// FIX 12 — carregarDadosSupabase com mapeamento correto
+//           (sobrescreve a versão original que chama renderAll
+//            e usa campos errados)
+// ─────────────────────────────────────────────────────────
+let _dbLoaded = false;
+
+async function carregarDadosSupabase() {
+  if (_dbLoaded) return;
+  const sb = getSB();
+  if (!sb) { console.info('Supabase não configurado — modo local'); return; }
+
+  try {
+    showToast('Carregando dados do banco...', 'info');
+    const [plan, manut, comp] = await Promise.all([
+      dbLoad('planejamento'),
+      dbLoad('manutencoes'),
+      dbLoad('compras')
+    ]);
+
+    // Mapear planejamento: descricao→desc
+    if (plan && plan.length) {
+      planningItems = plan.map(r => ({
+        ...r,
+        desc:           r.descricao || r.desc || '',
+        origemCompraId: r.origem_compra_id || null
+      }));
+      pvNextId = Math.max(pvNextId, ...planningItems.map(i => (i.id || 0) + 1));
+    }
+
+    // Mapear manutencoes: descricao→desc, data_plan→dataPlan, data_real→dataReal
+    if (manut && manut.length) {
+      manutencoes = manut.map(r => ({
+        ...r,
+        desc:     r.descricao || r.desc || '',
+        dataPlan: r.data_plan  || r.dataPlan  || '',
+        dataReal: r.data_real  || r.dataReal  || '',
+      }));
+    }
+
+    // Mapear compras
+    if (comp && comp.length) {
+      compras = comp.map(r => ({
+        ...r,
+        desc:     r.descricao || r.desc || '',
+        dataSol:  r.data_sol  || r.dataSol  || '',
+        dataFech: r.data_fech || r.dataFech || '',
+        valOrc:   r.val_orc   ?? r.valOrc   ?? 0,
+        valAprov: r.val_aprov ?? r.valAprov ?? 0,
+        valReal:  r.val_real  ?? r.valReal  ?? 0,
+        numReq:   r.num_req   || r.numReq   || '',
+        numOS:    r.num_os    || r.numOS    || '',
+        numOrc:   r.num_orc   || r.numOrc   || '',
+      }));
+    }
+
+    _dbLoaded = true;
+    showToast('✓ Dados carregados do banco', 'ok');
+    renderAll(); // FIX: agora renderAll() existe
+  } catch (e) {
+    console.error('Erro Supabase:', e);
+    showToast('Erro ao conectar banco — usando dados locais', 'err');
+  }
+}
+
+console.log('✅ MaintPro — patches aplicados com sucesso!');
 </body>
 </html>
 <script>
