@@ -3135,7 +3135,7 @@ function salvarManutencao(){
     subcat:document.getElementById('mfSubcat').value,prioridade:document.getElementById('mfPriori').value,
     desc:document.getElementById('mfDescricao').value,obs:document.getElementById('mfObs').value,
   };
-  const itemDB = {...item, descricao: item.desc}; delete itemDB.desc;
+  const itemDB = {tipo:item.tipo,categoria:item.categoria,equip:item.equip,norma:item.norma,critica:item.critica,resp:item.resp,forn:item.forn,orcado:item.orcado,realizado:item.realizado,dataPlan:item.dataPlan||null,dataReal:item.dataReal||null,status:item.status,avanco:item.avanco,metaFis:item.metaFis,realFis:item.realFis,subcat:item.subcat,prioridade:item.prioridade,descricao:item.desc,obs:item.obs};
   if(editId){
     const idx=manutencoes.findIndex(m=>m.id===editId);
     if(idx>=0) manutencoes[idx]=item;
