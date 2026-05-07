@@ -3121,53 +3121,50 @@ function abrirModalManutencao(id){
   document.getElementById('modalManutForm').classList.remove('hidden');
 }
 function salvarManutencao(){
-  const editId=parseInt(document.getElementById('modalManutForm').dataset.editId)||null;
-  const item={
-    id:editId||Date.now(),tipo:document.getElementById('mfTipo').value,
-    categoria:document.getElementById('mfTipo').value==='Melhoria'?'melhoria':'obrig',
-    equip:document.getElementById('mfEquip').value,norma:document.getElementById('mfNorma').value,
-    critica:document.getElementById('mfCriticidade').value,resp:document.getElementById('mfResp').value,
-    forn:document.getElementById('mfFornec').value,orcado:parseFloat(document.getElementById('mfOrcado').value)||0,
-    realizado:parseFloat(document.getElementById('mfRealizado').value)||0,
-    dataPlan:document.getElementById('mfDataPlan').value,dataReal:document.getElementById('mfDataReal').value,
-    status:document.getElementById('mfStatusForm').value,avanco:parseInt(document.getElementById('mfAvanco').value)||0,
-    metaFis:parseInt(document.getElementById('mfMetaFis').value)||0,realFis:parseInt(document.getElementById('mfRealFis').value)||0,
-    subcat:document.getElementById('mfSubcat').value,prioridade:document.getElementById('mfPriori').value,
-    desc:document.getElementById('mfDescricao').value,obs:document.getElementById('mfObs').value,
+  const editId = parseInt(document.getElementById('modalManutForm').dataset.editId)||null;
+  const item = {
+    id: editId || Date.now(),
+    tipo: document.getElementById('mfTipo').value,
+    categoria: document.getElementById('mfTipo').value==='Melhoria'?'melhoria':'obrig',
+    equip: document.getElementById('mfEquip').value,
+    norma: document.getElementById('mfNorma').value,
+    critica: document.getElementById('mfCriticidade').value,
+    resp: document.getElementById('mfResp').value,
+    forn: document.getElementById('mfFornec').value,
+    orcado: parseFloat(document.getElementById('mfOrcado').value)||0,
+    realizado: parseFloat(document.getElementById('mfRealizado').value)||0,
+    dataPlan: document.getElementById('mfDataPlan').value,
+    dataReal: document.getElementById('mfDataReal').value,
+    status: document.getElementById('mfStatusForm').value,
+    avanco: parseInt(document.getElementById('mfAvanco').value)||0,
+    metaFis: parseInt(document.getElementById('mfMetaFis').value)||0,
+    realFis: parseInt(document.getElementById('mfRealFis').value)||0,
+    subcat: document.getElementById('mfSubcat').value,
+    prioridade: document.getElementById('mfPriori').value,
+    desc: document.getElementById('mfDescricao').value,
+    obs: document.getElementById('mfObs').value,
   };
-  const itemDB = {tipo:item.tipo,categoria:item.categoria,equip:item.equip,norma:item.norma,critica:item.critica,resp:item.resp,forn:item.forn,orcado:item.orcado,realizado:item.realizado,dataPlan:item.dataPlan||null,dataReal:item.dataReal||null,status:item.status,avanco:item.avanco,metaFis:item.metaFis,realFis:item.realFis,subcat:item.subcat,prioridade:item.prioridade,descricao:item.desc,obs:item.obs};
+  const dbRow = {
+    tipo:item.tipo, categoria:item.categoria, equip:item.equip,
+    norma:item.norma, critica:item.critica, resp:item.resp, forn:item.forn,
+    orcado:item.orcado, realizado:item.realizado,
+    dataPlan:item.dataPlan||null, dataReal:item.dataReal||null,
+    status:item.status, avanco:item.avanco, metaFis:item.metaFis,
+    realFis:item.realFis, subcat:item.subcat, prioridade:item.prioridade,
+    descricao:item.desc, obs:item.obs,
+  };
   if(editId){
     const idx=manutencoes.findIndex(m=>m.id===editId);
     if(idx>=0) manutencoes[idx]=item;
-    dbUpdate('manutencoes', editId, itemDB).catch(console.warn);
+    dbUpdate('manutencoes',editId,dbRow).catch(console.warn);
   } else {
     manutencoes.push(item);
-    dbInsert('manutencoes', {...item, descricao: item.desc}).then(saved=>{ if(saved?.id) item.id=saved.id; }).catch(console.warn);
+    dbInsert('manutencoes',dbRow).then(saved=>{if(saved?.id) item.id=saved.id;}).catch(console.warn);
   }
   fecharModal('modalManutForm');
   renderManutencoes();
+  showToast('✓ Manutenção salva!','ok');
 }
-function excluirManutencao(id){ if(confirm('Excluir esta manutenção?')){manutencoes=manutencoes.filter(m=>m.id!==id);dbDelete('manutencoes',id).catch(console.warn);renderManutencoes();}}
-
-function renderManutencoes(){
-  initManutencoes();
-  const total=manutencoes.length, conc=manutencoes.filter(m=>m.status==='Concluído').length;
-  const emAnd=manutencoes.filter(m=>m.status==='Em andamento').length;
-  const atras=manutencoes.filter(m=>m.status==='Atrasado').length;
-  const pctAv=total?Math.round(manutencoes.reduce((a,m)=>a+m.avanco,0)/total):0;
-  const totOrc=manutencoes.reduce((a,m)=>a+m.orcado,0);
-  const totReal=manutencoes.reduce((a,m)=>a+m.realizado,0);
-  const devFin=totReal-totOrc;
-  document.getElementById('manutKpiGrid').innerHTML=`
-    <div class="kpi-card kpi-main clickable-kpi" onclick="filtrarManut('')" title="Ver todas"><div class="kpi-lbl">Total Planejadas</div><div class="kpi-val">${total}</div><div class="kpi-sub">ações cadastradas</div></div>
-    <div class="kpi-card kpi-green clickable-kpi" onclick="filtrarManut('Concluído')" title="Ver concluídas"><div class="kpi-lbl">Concluídas</div><div class="kpi-val" style="color:var(--green-600)">${conc}</div><div class="kpi-sub">${total?Math.round(conc/total*100):0}% do total</div></div>
-    <div class="kpi-card kpi-blue clickable-kpi" onclick="filtrarManut('Em andamento')" title="Ver em andamento"><div class="kpi-lbl">Em Andamento</div><div class="kpi-val" style="color:var(--blue)">${emAnd}</div><div class="kpi-sub">em execução</div></div>
-    <div class="kpi-card ${atras>0?'kpi-red':'kpi-green'} clickable-kpi" onclick="filtrarManut('Atrasado')" title="Ver atrasadas"><div class="kpi-lbl">Atrasadas</div><div class="kpi-val ${atras>0?'val-pos':''}">${atras}</div><div class="kpi-sub">${atras>0?'requerem atenção':'sem atrasos'}</div></div>
-    <div class="kpi-card kpi-teal"><div class="kpi-lbl">Avanço Geral</div><div class="kpi-val" style="color:var(--teal)">${pctAv}%</div><div class="kpi-sub"><div class="prog-bar-wrap" style="margin-top:4px"><div class="prog-bar-fill ${pctAv>70?'green':pctAv>40?'amber':'red'}" style="width:${pctAv}%"></div></div></div></div>
-    <div class="kpi-card ${devFin>0?'kpi-red':'kpi-green'} clickable-kpi" onclick="openDrillModal('manutFin')" title="Ver detalhes financeiros"><div class="kpi-lbl">Desvio Financeiro</div><div class="kpi-val ${devFin>0?'val-pos':'val-neg'}" style="font-size:18px">${(devFin>=0?'+':'')+fmtK(devFin)}</div><div class="kpi-sub">Orç: ${fmtK(totOrc)} · Real: ${fmtK(totReal)}</div></div>
-  `;
-  // Alertas clicáveis
-  const alertas=[];
   if(atras>0) alertas.push({cls:'red',txt:`⚠ ${atras} manutenção(ões) atrasada(s)`,click:`filtrarManut('Atrasado')`});
   const hoje=new Date();
   manutencoes.forEach(m=>{
